@@ -1,21 +1,183 @@
 # EdgeFace: Efficient Face Recognition Model for Edge Devices
 
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/edgeface-efficient-face-recognition-model-for/lightweight-face-recognition-on-lfw)](https://paperswithcode.com/sota/lightweight-face-recognition-on-lfw?p=edgeface-efficient-face-recognition-model-for)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/edgeface-efficient-face-recognition-model-for/lightweight-face-recognition-on-calfw)](https://paperswithcode.com/sota/lightweight-face-recognition-on-calfw?p=edgeface-efficient-face-recognition-model-for)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/edgeface-efficient-face-recognition-model-for/lightweight-face-recognition-on-cplfw)](https://paperswithcode.com/sota/lightweight-face-recognition-on-cplfw?p=edgeface-efficient-face-recognition-model-for)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/edgeface-efficient-face-recognition-model-for/lightweight-face-recognition-on-cfp-fp)](https://paperswithcode.com/sota/lightweight-face-recognition-on-cfp-fp?p=edgeface-efficient-face-recognition-model-for)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/edgeface-efficient-face-recognition-model-for/lightweight-face-recognition-on-agedb-30)](https://paperswithcode.com/sota/lightweight-face-recognition-on-agedb-30?p=edgeface-efficient-face-recognition-model-for)	
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/edgeface-efficient-face-recognition-model-for/lightweight-face-recognition-on-ijb-b)](https://paperswithcode.com/sota/lightweight-face-recognition-on-ijb-b?p=edgeface-efficient-face-recognition-model-for)	
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/edgeface-efficient-face-recognition-model-for/lightweight-face-recognition-on-ijb-c)](https://paperswithcode.com/sota/lightweight-face-recognition-on-ijb-c?p=edgeface-efficient-face-recognition-model-for)	
-
 [![arXiv](https://img.shields.io/badge/cs.CV-arXiv%3A2307.01838-009d81v2.svg)](https://arxiv.org/abs/2307.01838v2)
 
+This branch contains the **inference code**, a **ready-to-use API**, and **Jupyter testing notebooks** for evaluating and deploying the **EdgeFace** model — an efficient, high-performance face recognition system designed for deployment on **edge devices**.
 
-This repository contain inference code and pretrained models to use [**EdgeFace: Efficient Face Recognition Model for Edge Devices**](https://ieeexplore.ieee.org/abstract/document/10388036/), 
-which is the **winning entry** in *the compact track of ["EFaR 2023: Efficient Face Recognition Competition"](https://arxiv.org/abs/2308.04168) organised at the IEEE International Joint Conference on Biometrics (IJCB) 2023*. For the complete source code of training and evaluation, please check the [official repository](https://gitlab.idiap.ch/bob/bob.paper.tbiom2023_edgeface).
+> This work is part of a final project for the Computer Vision course at **Egypt-Japan University of Science and Technology (E-JUST)**.
 
+---
+
+## Model Architecture
 
 ![EdgeFace](assets/edgeface.png)
+
+The **EdgeFace** model is a lightweight, mobile-friendly face recognition system built upon the **EdgeNeXt** architecture.
+> The key architectural contribution of EdgeFace lies in the **replacement of standard linear layers with Low-Rank Linear (LoRALin) modules**. This optimization reduces the number of parameters in the fully connected layers while preserving model accuracy, making it especially suitable for deployment on resource-constrained devices.
+
+The EdgeFace codebase includes:
+- Pretrained weights
+- Efficient training and evaluation pipelines
+- Partial FC sampling for large-scale identity learning
+
+---
+
+## Mathematical Overview
+
+EdgeFace maps an input image to a compact embedding vector, then uses margin-based softmax losses to make the embeddings discriminative.
+
+### From Embeddings to Logits
+
+Let:
+
+* `x` ∈ ℝ¹ˣᵈ: the normalized face embedding (output of EdgeFace)
+* `W` ∈ ℝᶜˣᵈ: the normalized class weight matrix (one row per identity)
+* `θⱼ`: the angle between the embedding `x` and class weight `Wⱼ`
+
+Then we compute the logits as:
+
+```
+logits = x · Wᵀ    → shape: [1, C]
+```
+
+Since `x` and `W` are both L2-normalized, the dot product is equivalent to cosine similarity:
+
+```
+logits[j] = cos(θⱼ)
+```
+
+So the output is a `[1, C]` vector of cosine similarities between the input embedding and each class prototype.
+
+---
+
+### Cross-Entropy Loss on Cosine Logits
+
+After computing the cosine logits, we apply softmax and cross-entropy loss to supervise the classification.
+
+Given:
+- `z` = cosine logits (1 × C)
+- `y` = index of the correct class
+
+Softmax converts logits to class probabilities:
+
+```
+
+p_j = exp(z_j) / sum_k exp(z_k)
+
+```
+
+Then the cross-entropy loss is:
+
+```
+
+L = -log(p_y) = -log(exp(z_y) / sum_k exp(z_k))
+
+```
+
+This loss:
+- Encourages the cosine similarity `z_y` for the correct class to be **maximized**
+- Encourages all other class logits `z_k` where `k ≠ y` to be **minimized**
+
+It effectively **pulls the correct embedding toward its class center** and **pushes it away from others**, creating angular separation on the hypersphere.
+
+---
+### Applying Margins to the Ground-Truth Class
+
+The purpose of margin-based losses is to modify the logit of the correct class (`y`) before applying softmax — making classification stricter and improving generalization.
+
+#### 1. **CosFace** (Additive Cosine Margin)
+
+```
+cos(θᵧ) → cos(θᵧ) - m
+```
+
+Applies a fixed margin directly to the cosine value. Improves inter-class separation.
+
+#### 2. **ArcFace** (Additive Angular Margin)
+
+```
+cos(θᵧ) → cos(θᵧ + m)
+```
+
+Applies the margin in angular space (adds margin to the angle itself). This is more geometrically meaningful.
+
+#### 3. **SphereFace** (Multiplicative Angular Margin)
+
+```
+cos(θᵧ) → cos(m × θᵧ)
+```
+
+Multiplies the angle to make class boundaries tighter — but may cause convergence issues early in training.
+
+#### 4. **CombinedMarginLoss** (Generalized Form)
+
+Combines all three margin types:
+
+```
+cos(θᵧ) → cos(m₁ × θᵧ + m₂) - m₃
+```
+
+Where:
+
+* `m₁`: SphereFace-style (multiplicative angle)
+* `m₂`: ArcFace-style (additive angle)
+* `m₃`: CosFace-style (subtracted cosine)
+
+Only the logit for the true class is modified; other logits stay unchanged.
+
+---
+
+### 🔹 5. **Triplet Loss** (Distance-Based)
+
+Used for metric learning rather than classification. The goal is to make:
+
+* Anchor and positive embeddings (same identity) close
+* Anchor and negative embeddings (different identity) far apart
+
+The loss is:
+
+```
+L = max(0, ||fₐ - fₚ||² - ||fₐ - fₙ||² + margin)
+```
+
+Where:
+
+* `fₐ`: anchor
+* `fₚ`: positive
+* `fₙ`: negative
+
+Triplet loss requires hard example mining to work well.
+---
+
+
+
+##  Experiments and Results
+
+All experiments were conducted using the **Labeled Faces in the Wild (LFW)** dataset.
+
+>  **Note**: Although LFW is typically used as a **benchmarking dataset** for face verification, not training, it was used here due to its small size and simplicity — allowing for rapid comparisons across multiple loss functions and hyperparameter settings.
+
+### Loss Function Comparisons
+
+| Loss Function   | Margin     | Test Accuracy (%) |
+|-----------------|------------|-------------------|
+| CosFace         | 0.4        | 83.7              |
+| ArcFace         | 0.25       | 84.4              |
+| Triplet Loss    | 1.5        | 69.8              |
+
+
+---
+
+###  Gamma Value Comparison (LoRALin Activation Gamma)
+
+| Gamma Value | Description                                 | Test Accuracy (%) |
+|-------------|---------------------------------------------|-------------------|
+| 0.2         | Reduced influence of LoRALin updates        | 81.0              |
+| 0.5         | Balanced influence (best performing)        | 83.7              |
+| 1.0         | Full-weighted model (default, no LoRALin)   | 83.9              |
+
+
+
 
 ## Installation
 ```sh
@@ -49,52 +211,6 @@ transformed_input = transform(aligned) # preprocessing
 embedding = model(transformed_input)
 ```
 
-
-
-## Pre-trained models
-- EdgeFace-s (gamma=0.5): available in [`checkpoints/edgeface_s_gamma_05.pt`](checkpoints/edgeface_s_gamma_05.pt)
-- EdgeFace-xs (gamma=0.6): available in [`checkpoints/edgeface_xs_gamma_06.pt`](checkpoints/edgeface_xs_gamma_06.pt)
-
-
-
-## Performance
-The performance of each model is reported in Table 2 of the [paper](https://arxiv.org/pdf/2307.01838v2.pdf):
-
-![performance](assets/benchmark.png)
-
-
-## :rocket: New! Using EdgeFace Models via `torch.hub`
-
-### Available Models on `torch.hub`
-
-- `edgeface_base`
-- `edgeface_s_gamma_05`
-- `edgeface_xs_q`
-- `edgeface_xs_gamma_06`
-- `edgeface_xxs`
-- `edgeface_xxs_q`
-
-**NOTE:** Models with `_q` are quantised and require less storage.
-
-### Loading EdgeFace Models with `torch.hub`
-
-You can load the models using `torch.hub` as follows:
-
-```python
-import torch
-model = torch.hub.load('otroshi/edgeface', 'edgeface_xs_gamma_06', source='github', pretrained=True)
-model.eval()
-```
-
-### Performance benchmarks of different variants of EdgeFace
-
-| Model               | MPARAMS| MFLOPs |    LFW(%)    |    CALFW(%)  |   CPLFW(%)   |   CFP-FP(%)  |   AgeDB30(%) |
-|:--------------------|-------:|-------:|:-------------|:-------------|:-------------|:-------------|:-------------|
-| edgeface_base       |  18.23 |1398.83 | 99.83 ± 0.24 | 96.07 ± 1.03 | 93.75 ± 1.16 | 97.01 ± 0.94 | 97.60 ± 0.70 |
-| edgeface_s_gamma_05 |   3.65 | 306.12 | 99.78 ± 0.27 | 95.55 ± 1.05 | 92.48 ± 1.42 | 95.74 ± 1.09 | 97.03 ± 0.85 |
-| edgeface_xs_gamma_06|   1.77 | 154.00 | 99.73 ± 0.35 | 95.28 ± 1.37 | 91.58 ± 1.42 | 94.71 ± 1.07 | 96.08 ± 0.95 |
-| edgeface_xxs        |   1.24 |  94.72 | 99.57 ± 0.33 | 94.83 ± 0.98 | 90.27 ± 0.93 | 93.63 ± 0.99 | 94.92 ± 1.15 |
-
 # EdgeFace API
 
 EdgeFace serves an API as well - see api.py for more details. You can run the api with the following command:
@@ -125,6 +241,17 @@ You can test the API endpoints through the interactive Swagger UI documentation 
 ```
 http://127.0.0.1:8000/docs
 ```
+
+## Pre-trained models
+- EdgeFace-s (gamma=0.5): available in [`checkpoints/edgeface_s_gamma_05.pt`](checkpoints/edgeface_s_gamma_05.pt)
+- EdgeFace-xs (gamma=0.6): available in [`checkpoints/edgeface_xs_gamma_06.pt`](checkpoints/edgeface_xs_gamma_06.pt)
+
+
+
+## Performance
+The performance of each model is reported in Table 2 of the [paper](https://arxiv.org/pdf/2307.01838v2.pdf):
+
+![performance](assets/benchmark.png)
 
 ## Reference
 If you use this repository, please cite the following paper, which is [published](https://ieeexplore.ieee.org/abstract/document/10388036/) in the IEEE Transactions on Biometrics, Behavior, and Identity Science (IEEE T-BIOM). The PDF version of the paper is available as [pre-print on arxiv](https://arxiv.org/pdf/2307.01838v2.pdf). The complete source code for reproducing all experiments in the paper (including training and evaluation) is also publicly available in the [official repository](https://gitlab.idiap.ch/bob/bob.paper.tbiom2023_edgeface).
