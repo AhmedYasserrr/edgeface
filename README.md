@@ -146,7 +146,6 @@ Where:
 * `fₚ`: positive
 * `fₙ`: negative
 
-Triplet loss requires hard example mining to work well.
 ---
 
 
@@ -163,6 +162,7 @@ All experiments were conducted using the **Labeled Faces in the Wild (LFW)** dat
 |-----------------|------------|-------------------|
 | CosFace         | 0.4        | 83.7              |
 | ArcFace         | 0.25       | 84.4              |
+| ArcFace         | 1.5        | 81.2              |
 | Triplet Loss    | 1.5        | 69.8              |
 
 
