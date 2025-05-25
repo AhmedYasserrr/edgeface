@@ -2,7 +2,7 @@
 
 [![arXiv](https://img.shields.io/badge/cs.CV-arXiv%3A2307.01838-009d81v2.svg)](https://arxiv.org/abs/2307.01838v2)
 
-This branch contains the **inference code**, a **ready-to-use API**, and **Jupyter testing notebooks** for evaluating and deploying the **EdgeFace** model — an efficient, high-performance face recognition system designed for deployment on **edge devices**.
+This branch contains the **inference code**, a **ready-to-use API**, and **Jupyter testing notebooks** for training the **EdgeFace** model — an efficient, high-performance face recognition system designed for deployment on **edge devices**.
 
 > This work is part of a final project for the Computer Vision course at **Egypt-Japan University of Science and Technology (E-JUST)**.
 
